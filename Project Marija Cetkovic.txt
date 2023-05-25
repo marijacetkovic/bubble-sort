@@ -1,0 +1,910 @@
+;;---------------------------------------------------------
+;;---------------------------------------------------------
+;;----------------BUBBLE SORT IN ASSEMBLY------------------
+;;-------------------SYSTEMS 1, 2023-----------------------
+;;---------------MARIJA CETKOVIC 89221046------------------
+;;---------------------------------------------------------
+;;---------------------------------------------------------
+
+
+
+JMP main
+JMP isr
+
+;counters
+i: DW 0
+j: DW 0
+
+;currently compared numbers and their addresses
+number1: DW 0
+number2: DW 0
+nr1address: DW 0
+nr2address: DW 0
+
+;color variables
+color: DW 0
+strcolor: DW 0x00E2
+
+;booleans
+endinput: DW 0
+vsync: DW 0
+
+;strings
+bubble_message: DB " bubbles up"
+DB 0
+empty_string: DB "             "
+DB 0
+
+
+;array holding the numbers
+ORG 0x0050
+array:
+ORG 0x0057
+
+
+;load title function that prints the title and sets background
+load_title:
+    MOV A, 0xA300   ;background info
+    OUT 8            ;thorugh vidaddr
+    MOV A, 0x0002      ; set pink
+    OUT 9              ; through viddata
+    MOV B, title1 ; pointer to first char of title
+    MOV C, 1030   ;screen cell
+    MOVB [strcolor], 0x00AA ;purple for title
+    CALL print_string
+    MOV B, title2
+    MOV C, 1540  ;next one is two rows below
+    CALL print_string
+    MOV B, title3
+    MOV C, 2058
+    CALL print_string
+    RET
+   
+;function that waits a selected number of frames   
+;receives arg in reg D
+wait_frames:
+  PUSH A
+  wait_frame_loop:
+  MOV A, [vsync]
+  CMP A, 0
+  JE wait_frame_loop
+  MOV [vsync], 0 ; reset vsync
+  CMP D, 0
+  JE wait_frames_return
+  DEC D
+  JMP wait_frame_loop
+  wait_frames_return:
+  POP A
+  RET
+
+
+;function to print string on screen
+;receives string in B reg and starting
+;screen cell in C reg
+print_string:
+	loop_string:
+    MOV A, C ;set screen cell
+    OUT 8
+    MOVB AH, [B] ;get char
+    CMPB AH, 0 ; is it 0
+    JE exit_loop_string ;exit
+    MOVB AL, [strcolor] ;set color
+    OUT 9 ; out viddata
+    INC B ; next char
+    ADD C, 2 ; move screen cell 2 bytes
+    MOV D, [waitframe_string] ;waitframe
+    CALL wait_frames
+    JMP loop_string
+    exit_loop_string:
+    RET
+
+
+;--------------------------------------------------------    
+; print numbers function that prints the array of numbers
+; prints the numbers separated by a space
+;--------------------------------------------------------
+
+print_numbers:
+	MOV B, 0x0050  ; starting address
+	MOV C, 2050 ; screen cell
+	
+    loop_num:
+    MOV A, C  ; move screen cell to A
+    OUT 8 ; through vidaddr
+    MOVB AH, [B] ;get first num
+    CMP B, 0x0057 ; is it the last address
+    JE exit_loop_num ; if equal done
+    MOVB AL, 0x00AA ;set purple color
+    OUT 9 ; out viddata
+    MOV D, 10
+    CALL wait_frames
+    INC B ; get next num
+    ADD C, 4 ; move screen cell 4 bytes
+    JMP loop_num ; repeat
+   
+    exit_loop_num:
+    RET
+
+;parameters: addresses of two numbers being compared
+;address of the first one on the screen is 2050
+;takes 2 bytes, then another 2 bytes used by the
+;space to separate them = 4 bytes until the next nr
+;need the starting point of the first number compared, second
+;nr will always be the one next to it (4 bytes to the right)
+color_numbers_compared:
+  MOV A, [j] ;position is based on j counter
+  ;;----------------------------------------------
+  ;; element of index 0 will have position 2050
+  ;; next el is 4 bytes away from the first = el of index
+  ;; 1 will have position 1*4+2050
+  ;; using the same logic throughout the program
+  ;;----------------------------------------------
+  MUL 4
+  ADD A, 2050   ;add starting address
+  OUT 8   ; through vidaddr
+  MOV B, A   ;save that calculation
+  MOVB AH, [number1]   ;get left nr
+  MOVB AL, [color]
+  OUT 9  ;print 
+  ADD B, 4 ; retreive previous calc and add 4 bytes (next nr)
+  MOV A, B  
+  OUT 8 ; address of the next number out vidaddr
+  MOVB AH, [number2] ;get current number2
+  MOVB AL, [color] ;set the color
+  OUT 9 ;out viddata
+  MOV D, 4 ; show the currently compared nrs 4 frames long
+  CALL wait_frames
+  RET
+
+;----------------------------------------------------------
+;----------------------------------------------------------
+;-- function that creates sprites out of the numbers that
+;-- should switch place. it deletes them off the screen,
+;-- creates sprites, moves them accordingly and finally
+;-- resets the sprites and changes the numbers back to
+;-- text characters. it also displays the bubble up msg
+;-- and animates two bubble sprites next to the message
+;----------------------------------------------------------
+;----------------------------------------------------------
+
+switch_numbers_compared:
+  MOV D, 14  ; wait frames so it doesnt go too fast
+  CALL wait_frames
+  
+  ;;--based on the logic described in previous function
+  ;;--delete the numbers off the screen by printing empty
+  ;;--we need to delete them so sprites wont overlap the text
+  
+  MOV A, [j]
+  MUL 4
+  ADD A, 2050 ;0x0802
+  OUT 8
+  MOV B, A ;preserve the address
+  MOVB AH, 0 ;delete the numbers from the screen
+  MOVB AL, 0
+  OUT 9
+  ADD B, 4  ;next nr
+  MOV A, B
+  OUT 8
+  MOVB AH, 0  ;delete
+  MOVB AL, 0
+  OUT 9
+
+  MOV D, 18   ;wait frames to show change happening
+  CALL wait_frames
+
+;;------------------CREATE SPRITES-------------------------
+
+;now that they are deleted create sprites
+
+;number1 is greater so it goes to right
+;number2 goes left
+  MOVB [color], 0xE2 ; set color
+  MOV A, 0xA306  ;address of sprite 1
+  OUT 8 ; activate the address
+  MOVB AH, [number1] ;let sprite 1 be left number
+  MOVB AL, [color]
+  OUT 9
+  MOV A, 0xA308   ; vram address of position of sprite 1
+  OUT 8  
+
+  ;numbers as text are in row 8
+  ;8 * 16 px = 128 px = 0x80 - x cell
+  ; y cell depends on index - j counter
+  ; first number is in column 1 - 16px = 0x10
+  
+  MOV A, [j]  ; get j counter
+  MUL 32 ; like we multiplied by 4 bytes now multiply by 32 px
+  ADD A, 0x10 ; account for the empty column
+  MOVB AH, AL ; column position in AH
+  MOVB AL, 0x80   ; row 8 in pixels to AL
+  OUT 9
+
+  MOV A, 0xA30A  ;address of sprite 2
+  OUT 8 ; activate the address
+  MOVB AH, [number2] ;let sprite 2 be left number
+  MOVB AL, [color]
+  OUT 9
+  MOV A, 0xA30C
+  OUT 8  
+  MOV A, 0
+  ;position calculation same as for sprite 1
+  ;but instead of accounting for 1 column, add another 2
+  ;to skip previous number and another space 
+  ;3*16px = 0x30
+  MOV A, [j]
+  MUL 32
+  ADD A, 0x30 
+  MOVB AH, AL
+  MOVB AL, 0x80 ; row is the same
+  OUT 9
+
+  MOV D, 10   ;wait frame
+  CALL wait_frames
+
+;;-------------------BUBBLE ANIMATION------------------------
+
+
+;display the bubble msg
+  MOV B, bubble_message ;pointer to msg
+  MOV C, 2820 ;screen cell -0x0B04
+  MOVB [strcolor], 0x00E2 ; pink for bubble msg
+  CALL print_string ;print the message
+ 
+; make two sprites in bubble shape 
+; locations of bubbles are calculated relative to 
+; existing elements on the screen
+; (row below bubble msg, two cols left and right from it)
+
+  MOVB [bubblecolor], 0xFF
+  MOV A, 0xA30E  ;address of sprite 3
+  OUT 8 ; activate the address
+  MOVB AH, 'Z' ;let spr 3 be bubble
+  MOVB AL, [bubblecolor]
+  OUT 9
+  MOV A, 0xA310 ;activate screen position of spr 3
+  OUT 8  
+  MOVB AH, 0xDE ;column 13*16px = 0xDE
+  ;bubble msg is in row B thats 11*16px +16 px for row below = 0xBC
+  MOVB AL, 0xBC    
+  OUT 9
+
+  MOV A, 0xA312  ;address of sprite 4
+  OUT 8 ; activate the address
+  MOVB AH, 'Z' ;let spr 4 be bubble
+  MOVB AL, [bubblecolor]
+  OUT 9
+  MOV A, 0xA314 ;activate screen position of spr 3
+  OUT 8  
+  MOVB AH, 0x10 ;column 1*16px = 0x10
+  ;same row as other bubble
+  MOVB AL, 0xBC    
+  OUT 9
+
+
+  MOV C, 32 ; were moving it 32px up
+  movebubbleup:
+  CMP C, 0  ;are we done
+  JE deletebubble
+  IN 9  ;read current position of sprite 4
+  DECB AL ;move 1 pixel up x position -rows
+  OUT 9 ;set new
+  MOV A, 0xA310 ;sprite3 position address
+  OUT 8 ;activate
+  IN 9 ; read current possition
+  DECB AL ;one pixel up x position
+  OUT 9 ;set new
+  MOV A, 0xA314 ;prepare sprite4 position addres
+  OUT 8 ; vidaddr
+  DEC C ; lower counter and wait for a frame
+  MOV D, 1 ; wait frame
+  CALL wait_frames
+  JMP movebubbleup
+
+
+;; delete bubbles off the screen by accessing addresses
+;; of sprites and setting to 0 
+
+  deletebubble:
+  ;remove sprite 3 from the screen
+  MOV A, 0xA30E  ;address of sprite 3
+  OUT 8 ; activate the address
+  MOV A, 0
+  OUT 9
+  MOV A, 0xA312  ;address of sprite 4
+  OUT 8 ; activate the address
+  MOV A, 0
+  OUT 9
+
+;;-----------------------------------------------------------
+;;----------------MOVE NUMBER SPRITES------------------------
+;; moving sprite 1 down 1 row, right 2 cols, up 1 row
+;; moving sprite 2 up 1 row, left 2 cols, down 1 row
+;;-----------------------------------------------------------
+
+  MOV A, 0xA308 ;VRAM address sprite 1
+  OUT 8
+  MOV C, 0x10 ; 16 px
+  loopsprite1:
+  CMP C, 0  ;are we done
+  JE right1
+  IN 9
+  INCB AL  ; move one pixel down
+  OUT 9  ;set new pos
+  DEC C ; dec cntr
+  MOV D, 0   ;wait a frame
+  CALL wait_frames
+  JMP loopsprite1   ;cont
+
+  right1:
+  MOV C, 0x20 ; 32 px
+  right1loop:
+  CMP C,0 ;are we done
+  JE up1
+  IN 9   ;read current pos
+  INCB AH   ;move one pixel to the right 
+  OUT 9 ; set new
+  DEC C ; dec counter
+  MOV D, 0   ;wait frame
+  CALL wait_frames
+  JMP right1loop
+
+  up1:
+  IN 9   
+  MOV C, 0x10 ; did it reach row above
+  up1loop:
+  IN 9  ; read position of sprite 1
+  CMP C, 0  ;are we done
+  JE moveleft
+  DECB AL   ;move one pixel up
+  OUT 9  ; update new position of sprite 1
+  MOV A, 0xA30C ;VRAM address sprite 2
+  OUT 8 ; activate
+  IN 9   ;read current
+  DECB AL  ;move one pixel up x position
+  OUT 9 ;new position of sprite 2
+  MOV A, 0xA308 ; prepare VRAM address sprite 1
+  OUT 8
+  DEC C ; one pixel done
+  MOV D, 0 ;wait a frame
+  CALL wait_frames
+  JMP up1loop ;continue
+
+  moveleft:
+  MOV A, 0xA30C   ;vram addr of sprite 2
+  OUT 8  ;activate
+  MOV C, 0x20 ;want to move two columns (32 pixels)
+  leftloop:
+  CMP C, 0
+  JE movedown
+  IN 9   ; read current position 
+  DECB AH   ;move 1 pixel to the left y position
+  OUT 9  ;update position 
+  DEC C ; one pixel done
+  MOV D, 0
+  CALL wait_frames  ;wait a frame
+  JMP leftloop
+
+  movedown:
+  MOV C, 0x10 ; 1 row below
+  downloop:
+  CMP C, 0 ;are we done
+  JE contswitch
+  IN 9   ;read current
+  INCB AL   ;move 1 pixel down x position
+  OUT 9  ; set new
+  DEC C   ;dec counter
+  MOV D, 0
+  CALL wait_frames  ;wait frame
+  JMP downloop
+  contswitch:
+
+;switch the current number variables (for the color numbers
+;function to return to default color with the new order)
+
+  MOV B, [number1]
+  MOV C, [number2]
+  MOV [number1], C
+  MOV [number2], B
+
+;deactivate sprites by accessing vram addresses and setting to 0
+
+  MOV A, 0xA306  ;address of sprite 1
+  OUT 8 ; activate the address
+  MOV A, 0
+  OUT 9
+
+  MOV A, 0xA30A  ;address of sprite 2
+  OUT 8 ; activate the address
+  MOV A, 0
+  OUT 9
+
+; print back the numbers in purple - change them to text
+  MOV A, [j]
+  MUL 4
+  ADD A, 2050 ;0x0802
+  OUT 8
+  MOV B, A ;preserve the address
+  MOVB AH, [number1]
+  MOVB AL, 0x00AA
+  OUT 9
+  ADD B, 4
+  MOV A, B
+  OUT 8
+  MOVB AH, [number2]
+  MOVB AL, 0x00AA
+  OUT 9
+  
+  ; display the change on the text display 
+  MOV A, [j] ; get j counter
+  ADD A, 0x1000  ; starting address of text display
+  MOV B, A ; save that calc
+  INC B ; next text display address
+  MOVB CL, [number1] ; get nr 1
+  MOVB [A], CL ; display
+  MOVB AL, [number2] ;get nr 2
+  MOVB [B], AL ; display
+
+  RET
+
+;; draw bubble function that prints bubbles in two rows on 
+;; the screen
+;; receives ending column in reg B
+
+draw_bubbles:
+  MOV C, 0x0102 ;second row
+  MOV D, 0x0E02 ;second to last
+
+  bubbleloop: 
+  CMP C, B  ; if at col given in reg B
+  JE retbbl ; exit
+
+  MOV A, C ; current address 
+  OUT 8  ; out vidaddr
+  MOVB AH, 'Z'  ; set bubble
+  MOVB AL, [bubblecolor] ;and color
+  OUT 9 ;out viddata
+  ADDB CL, 4  ; move two columns right (space in between)
+
+  MOV A, D  ; repeat for lower row
+  OUT 8
+  MOVB AH, 'Z'
+  MOVB AL, [bubblecolor]
+  OUT 9
+  ADDB DL, 4
+  JMP bubbleloop
+
+  retbbl:
+  RET
+
+
+;-------------------------------------------------
+; interrupt service routine 
+;-------------------------------------------------
+
+
+isr:
+  PUSH A   ; isr will use reg A
+  IN 1  ; read irqstatus
+  AND A, 1 ;check for kbd interrupts
+  CMP A, 1
+  JE isrkbd ;if eq jumo to isrkbd
+  ;else its vsync interrupt
+  isrgr:
+  MOV [vsync], 1 ; set vsync flag
+  MOV A, 4 ; service routine
+  OUT 2 ; out irqeoi
+  JMP isr_return
+
+  isrkbd:
+  IN 5  ; read kbdstatus
+  AND A, 1   ; mask out keydown
+  CMP A, 1 ; is keydown pressed 
+  JE storenum ; if yes store
+  IN 6 ; else read in 
+  JMP service_kbd
+
+  storenum:
+  IN 6  ;read kbddata
+  MOV [pressed], 1   ; set pressed flag
+  MOVB [current_input], AL; save it to current_input variable
+
+  service_kbd:
+  MOV A, 1
+  OUT 2 ;interrupt serviced
+  isr_return:
+  POP A ; restore reg A
+  IRET
+
+;----------------------------------------------------------
+
+main:
+  MOV SP, 0x0FFF ;move stack pointer
+  MOV A, 4 ; to set irq mask for graphics
+  OUT 0 ; out irq mask reg
+  STI ;enable interrupts
+  MOV A, 1  ;set up text mode
+  OUT 7  ;through vidmode
+
+;redefine Z to bubble
+; ASCII index of Z is 90
+; calc Z VRAM address 32768+90*32
+; in hex 0x8B40
+  MOV C, bubblechar ; pointer to bubble character
+  MOV D, 0x8B40 ; address of letter Z in VRAM
+  MOV B, 16 ; 16 px character
+  bubbleset:
+  CMP B, 0 ; all 16 px done 
+  JE bubble_set_exit ; break
+  MOV A, D ; activate vram address of Z
+  OUT 8 ; through vidaddr
+  MOV A, [C] ; get first 2 bytes (were copying two for two)
+  OUT 9 ; copy it to vram 
+  DEC B ; one row done
+  ADD C, 2 ; next word (row)
+  ADD D, 2 ; next vram address of z
+  JMP bubbleset
+  bubble_set_exit:
+
+;;;;-----------COLOR REDEFINING----------------
+
+;color of additional text
+;40960 + index · 3
+  MOV A, 0xA2A6 ; vram address of color nr 226
+  OUT 8; out vidaddr
+  MOV A, 0xC410
+  OUT 9
+  MOV A, 0xA2A7 ; next byte
+  OUT 8
+  MOV A, 0x1068
+  OUT 9
+
+;bubbles color
+  MOV A, 0xA003 ; vram address of color nr 1
+  OUT 8; out vidaddr
+  MOV A, 0xFFF0
+  OUT 9
+  MOV A, 0xA004 ; next byte
+  OUT 8
+  MOV A, 0xF0F3
+  OUT 9
+
+;bacgkround color
+  MOV A, 0xA006 ; vram address of color nr 2
+  OUT 8; out vidaddr
+  MOV A, 0xFFCF
+  OUT 9
+  MOV A, 0xA007 ; next byte
+  OUT 8
+  MOV A, 0xCFE6
+  OUT 9
+
+;color of main text
+  MOV A, 0xA1FE ; vram address of color nr 170
+  OUT 8; out vidaddr
+  MOV A, 0xED42
+  OUT 9
+  MOV A, 0xA1FF ; next byte
+  OUT 8
+  MOV A, 0x4295
+  OUT 9
+
+;----------------------------------------------------------
+
+;after everythings enabled call loadtitle
+
+  CALL load_title
+  MOVB [bubblecolor], 0x01 
+  MOV B, 0x011E ; supply parameter column 30 
+  CALL draw_bubbles   ;draw bubbles
+
+
+  MOV A, 5 ;kbd also allowed
+  OUT 0 ;out irqmask
+
+  MOV [waitframe_string], 1  ;for print string function
+  MOVB [strcolor], 0x00E2  ; set pink color
+
+; prints next title on the title page
+; infinite loop changing pink to white color while printing
+; until user types in B
+
+loopstart:
+  MOV B, title4
+  MOV C, 2822
+  CALL print_string  ;print string
+  MOV B, title5
+  MOV C, 3082
+  CALL print_string  ;printstring
+  MOV D, 10   ;wait frame
+  CALL wait_frames
+  MOVB DL, [strcolor]  ; check current color
+  CMPB DL, 0xE2 ;if its pink change to white
+  JE white
+  MOVB [strcolor], 0xE2 ;if its white change to pink
+  JMP inputB ; procces input
+  white:
+    MOVB [strcolor], 0xFF  ; set white
+  inputB:
+    MOV A, [pressed]  ;check if key pressed
+    CMP A, 0
+    JE loopstart   ;if flag not set continue looping
+    MOVB AL, [current_input] ;move current input to reg A
+    MOV B, 0x1000  ;addres of text display
+    MOVB [B], AL   ;display input
+    MOV [pressed], 0 ; reset pressed
+    CMPB AL, 0x42   ;check if input = B
+    JE startinput  ;if yes continue
+    JMP loopstart ; else cont looping
+
+startinput:
+  MOV [current_input], 0  ;reset input
+  MOVB [strcolor], 0x00AA ; reset str color to purple
+  MOV [waitframe_string], 0 ; change for print string 
+  MOV [pressed], 0  ;reset flag
+
+;clear screen by printing empty strings to locations
+;where previous strings were printed
+
+  MOV B, emptystr; pointer to first char of title
+  MOV C, 1024   ;screen cell
+  CALL print_string
+  MOV B, emptystr
+  MOV C, 1536  ;next one is two rows below
+  CALL print_string
+  MOV B, emptystr
+  MOV C, 2048
+  CALL print_string
+  MOV B, emptystr
+  MOV C, 2816
+  CALL print_string
+  MOV B, emptystr
+  MOV C, 3072
+  CALL print_string
+  MOVB [0x1000], 0   ; clear display
+
+;;display input message
+  MOVB [strcolor], 0x00AA ;change color
+  MOV B, inputmsg1 ; input message
+  MOV C, 1540  ; screen cell
+  CALL print_string
+  MOV B, inputmsg2 ; input message
+  MOV C, 2052; screen cell
+  CALL print_string
+
+
+;now we want to store array elements (7)
+  MOV C, array ; pointer to first array element in memory
+  MOV B, 0x1000 ;text display pointer
+
+;loop for input
+;wont continue main until input of 7 numbers entered
+checkinput:
+  MOV A, [pressed] ; check if kbd event happened
+  CMP A, 1 ;if 1 then keydown happened
+  JE process ;process it
+  JMP checkinput ;else loop
+  process:
+  MOVB AL, [current_input] ;get current input
+  MOVB [C], AL  ;store the num in memory
+  MOVB [B], AL  ;show it on text display
+  INC C ; next byte in memory for next array element
+  INC B ;next text display cell
+  MOV [pressed], 0  ;reset pressed flag
+  CMP C, 0x0057 ; last location of array
+  JE deletestring ;finish taking input
+  JMP checkinput
+
+;;once input taken delete the messages
+
+deletestring:
+  MOV B, emptystr ; empty string
+  MOV C, 1536  ; screen cell
+  CALL print_string
+  MOV B, emptystr 
+  MOV C, 2048; screen cell
+  CALL print_string
+
+;--------------------------------------------------
+;bubble sorting in cont main
+;--------------------------------------------------
+contmain:
+  MOV [waitframe_string], 3 ;print slower
+  MOV B, sortingtitle ;print sorting title
+  MOV C, 770
+  CALL print_string
+  CALL print_numbers ;print entered numbers to the screen
+  MOV D, 50 ;wait 1s before sort begins
+  CALL wait_frames
+
+; SORT!!
+  MOV D, 6 ; arr length -1
+  ;index = starting address + i
+outerfor:
+  MOV B, [i] ;get i counter
+  CMP B, 6 ; i<n did we finish 
+  JAE breakouter ;break outer loop
+  MOV [j], 0 ;reset j counter for inner loop
+  
+  innerfor:
+  MOV C, [j] ;get j counter
+  MOV A, 6 ; calculate n-1-i
+  MOV B, [i] ; this is the calculation because
+  ; we want to reduce by one after every completion of inner for loop
+  ; the total number of inner for iterations because we know
+  ; that we bubbled up one number to its position
+  SUB A, B
+  CMP C, A   ; j<n-1-i
+  JAE breakinner ;finished
+  ;first need to get addresses of the numbers currently compared
+  ;do so by the bubble sort formula
+  ; comparing a[j] and a[j+1]
+  ; j counter in C reg
+  
+  MOV A, array ;pointer to first array element
+  ADD A, C ; A = array+j address of first nr to be cmp
+  MOV B, array
+  ADD B, C ;
+  INC B ; B = array+ j + 1 second nr
+  
+  ; after addresses calculated get the numbers from memory
+  MOVB CL, [A]
+  MOVB DL, [B]
+  
+  ;store the values to the addresses number1, number2
+  ;that keep the current numbers compares
+  ;save also their addresses
+  
+  MOVB [number1], CL
+  MOVB [number2], DL
+  MOV [nr1address], A
+  MOV [nr2address], B
+  
+  MOVB [color], 0x00FF ;white
+  ;display which numbers are currently selected by
+  ;the algorithm by calling the color numbers function
+  CALL color_numbers_compared
+  
+  ; after currently selected displayed to the user
+  ; do the comparison
+  
+  MOVB CL, [number1]
+  MOVB DL, [number2]
+  CMP C, D ; if left number is greater, switch places
+  JA switchplace
+  JMP cont_inner
+
+;-----------------------------------------------------
+;-----------------------switching---------------------
+;-----------------------------------------------------
+  
+  switchplace:
+  ;retreive addresses from memory
+  ;at this point DL = number2
+  ;CL = number1
+  
+  MOV A, [nr1address] ; we get address of nr 1
+  MOV B, [nr2address] ; and nr 2
+  
+  
+  ;into retreived addresses, put second nr in nr1 and first nr into nr2 address
+  MOVB [A], DL ; switch by moving DL (2nd nr) to address of first
+  MOVB [B], CL ;and vice versa
+  
+  CALL switch_numbers_compared ; switch numbers animation
+  MOV [change_happened], 1 ; flag for switch happened
+
+  ;--------------------------------------------
+  ;continuation if no switching happened
+  ;--------------------------------------------
+
+  cont_inner:
+  
+  MOV B, empty_string ; remove bubble msg from scr
+  MOV C, 2820  ; screen cell where bubble msg was
+  CALL print_string
+  MOVB [color], 0x00AA ;purple
+  CALL color_numbers_compared ; return currently compared to default color
+  MOV C, [j] ;retrieve j counter
+  INC C ;increase
+  MOV [j], C ;put back
+  JMP innerfor ;repeat innerloop
+  
+  breakinner:
+  MOV D, [change_happened] 
+  CMP D, 0  ;if no change happened break loop 
+  JE breakouter
+  MOV [change_happened], 0 ; reset change to 0
+  MOV B, [i]  ;after inner is done increase outer loop counter
+  INC B
+  MOV [i], B ;store it
+  JMP outerfor ;repeat outer loop
+
+  breakouter: ;sorting done
+  
+  ; display on text display 
+  MOV B, 0x1000 ;pointer to text display
+  MOV C, sorting_done_string ;pointer to str
+  loopdisplay:
+  MOV A, [C] ;get char
+  CMPB AH, 0 ; is it 0
+  JE displaydone ; were done
+  MOVB [B], AH ; display it on text display
+  INC C  ; next char
+  INC B  ;next text display cell
+  CMP B, 0x100E ; is it second to last
+  JNE nochange
+  MOV B, 0x1010 ; switch to next row, not to break the sentence
+  nochange:
+  JMP loopdisplay ; loop
+  displaydone:
+
+  ;set new background
+  MOV A, 0xA300   ;background info
+  OUT 8            ;through vidaddr
+  MOV A, 0x00AA      ; set color
+  OUT 9              ; through viddata
+
+  ;print bubbles
+  MOVB [bubblecolor], 0x0002
+  MOV B, 0x01FA ;until the last column
+  CALL draw_bubbles
+  MOV [waitframe_string], 0 ; print the string faster
+  MOVB [strcolor], 0xFF 
+  MOV B, sorting_done_string ; final message
+  MOV C, 1824  ; screen cell
+  CALL print_string
+
+
+  MOV A, 0xA302 ; vram address of hscroll 
+  OUT 8 ; activate
+  MOV A, 0 ;set offset
+  loopscroll:
+  OUT 9 ; set current hscroll offset
+  INC A ; inc by 1 px
+  CMP A, 736 ; if 736 px reached 
+  JB noreset
+  MOV A, 0 ; reset the offset back to 0
+  noreset:
+  MOV D, 0
+  CALL wait_frames ; wait for a frame
+  JMP loopscroll
+  HLT
+
+
+
+;----------------------------------------------------------
+;more variable definitions
+
+sorting_done_string: DB "all sorted :) hope u enjoyed!"
+DB 0
+
+current_input: DW 0
+pressed: DW 0
+change_happened: DW 0
+title1: DB "welcome to"
+DB 0
+title2: DB "b u b b l e"
+DB 0
+title3: DB "sort !"
+DB 0
+title4: DB "press B to"
+DB 0
+title5: DB "start"
+DB 0
+waitframe_string: DW 3
+emptystr: DB "                "
+DB 0
+sortingtitle: DB "...sorting..."
+DB 0
+inputmsg1: DB "please input"
+DB 0
+inputmsg2: DB "your numbers"
+DB 0
+starting1: DW 0
+bubblecolor: DW 0
+starting2: DW 0
+starting3: DW 0
+
+bubblechar: DB "\x07\xC0\x18\x30\x20\x08\x41\xC4\x43\xF4"
+DB "\x80\xF2\xA0\x3A\x80\x1A\x80\x12\x98\x02\x58\x04\x4E\x04\x22\x08\x18\x30\x07\xC0\x00\x00"
